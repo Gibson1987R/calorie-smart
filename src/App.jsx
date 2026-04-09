@@ -19,6 +19,20 @@ import {
   cargarEstadoAplicacion,
   persistirAppState,
 } from "./lib/storage";
+import {
+  auth,
+  firebaseConfigurado,
+  loginConGoogle,
+  logoutFirebase,
+  observarAuth,
+} from "./lib/firebase";
+import {
+  actualizarMetaFirebase,
+  asegurarUsuarioFirebase,
+  cargarUsuariosFirebase,
+  guardarUsuarioFirebase,
+  seedUsuariosDemoSiHaceFalta,
+} from "./lib/firebaseData";
 
 export default function App() {
   const estadoInicial = useMemo(() => cargarEstadoAplicacion(), []);
@@ -30,6 +44,7 @@ export default function App() {
   const [estadoSync, setEstadoSync] = useState("Listo");
   const [mensajeLogin, setMensajeLogin] = useState("");
   const [prefillComida, setPrefillComida] = useState(null);
+  const [cargandoRemoto, setCargandoRemoto] = useState(false);
 
   useEffect(() => {
     persistirAppState({
@@ -39,6 +54,35 @@ export default function App() {
       onStatusChange: setEstadoSync,
     });
   }, [usuarios, sesion, usuarioSeleccionadoId]);
+
+  useEffect(() => {
+    if (!firebaseConfigurado || !auth) return undefined;
+
+    const unsubscribe = observarAuth(async (firebaseUser) => {
+      if (!firebaseUser) return;
+
+      setCargandoRemoto(true);
+      try {
+        await asegurarUsuarioFirebase(firebaseUser);
+        await seedUsuariosDemoSiHaceFalta();
+        const remotos = await cargarUsuariosFirebase();
+        if (remotos.length) {
+          setUsuarios(remotos);
+        }
+        setSesion({
+          userId: firebaseUser.uid,
+          rol: remotos.find((usuario) => usuario.id === firebaseUser.uid)?.rol || "usuario",
+        });
+        setEstadoSync("Firebase conectado");
+      } catch {
+        setEstadoSync("Firebase conectado con error de sincronizacion");
+      } finally {
+        setCargandoRemoto(false);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   const usuarioSesion = useMemo(
     () => usuarios.find((usuario) => usuario.id === sesion?.userId) || null,
@@ -166,7 +210,35 @@ export default function App() {
     setMensajeLogin("");
   };
 
+  const handleGoogleLogin = async () => {
+    try {
+      setCargandoRemoto(true);
+      const firebaseUser = await loginConGoogle();
+      await asegurarUsuarioFirebase(firebaseUser);
+      await seedUsuariosDemoSiHaceFalta();
+      const remotos = await cargarUsuariosFirebase();
+      if (remotos.length) {
+        setUsuarios(remotos);
+      }
+      const rol =
+        remotos.find((usuario) => usuario.id === firebaseUser.uid)?.rol || "usuario";
+      setSesion({
+        userId: firebaseUser.uid,
+        rol,
+      });
+      setMensajeLogin("");
+      setEstadoSync("Sesion iniciada con Google");
+    } catch (error) {
+      setMensajeLogin(error.message || "No se pudo iniciar sesion con Google");
+    } finally {
+      setCargandoRemoto(false);
+    }
+  };
+
   const handleLogout = () => {
+    if (firebaseConfigurado) {
+      logoutFirebase();
+    }
     setSesion(null);
     setMensajeLogin("");
   };
@@ -174,8 +246,8 @@ export default function App() {
   const handlePerfilChange = (event) => {
     const { name, value } = event.target;
 
-    setUsuarios((prev) =>
-      prev.map((usuario) => {
+    setUsuarios((prev) => {
+      const actualizados = prev.map((usuario) => {
         if (usuario.id !== usuarioActivo.id) return usuario;
 
         return {
@@ -187,8 +259,15 @@ export default function App() {
               : value,
           },
         };
-      })
-    );
+      });
+
+      const actualizado = actualizados.find((usuario) => usuario.id === usuarioActivo.id);
+      if (firebaseConfigurado && actualizado) {
+        guardarUsuarioFirebase(actualizado);
+      }
+
+      return actualizados;
+    });
   };
 
   const handleAgregarComida = (nuevaComida) => {
@@ -200,31 +279,44 @@ export default function App() {
       calorias: Number(nuevaComida.calorias),
     };
 
-    setUsuarios((prev) =>
-      prev.map((usuario) =>
+    setUsuarios((prev) => {
+      const actualizados = prev.map((usuario) =>
         usuario.id === usuarioActivo.id
           ? {
               ...usuario,
               consumos: [consumoNormalizado, ...usuario.consumos],
-            }
+          }
           : usuario
-      )
-    );
+      );
+
+      const actualizado = actualizados.find((usuario) => usuario.id === usuarioActivo.id);
+      if (firebaseConfigurado && actualizado) {
+        guardarUsuarioFirebase(actualizado);
+      }
+
+      return actualizados;
+    });
     setEstadoSync("Consumo registrado");
     setPrefillComida(null);
   };
 
   const handleAjustarMeta = (userId, nuevaMeta) => {
-    setUsuarios((prev) =>
-      prev.map((usuario) =>
+    setUsuarios((prev) => {
+      const actualizados = prev.map((usuario) =>
         usuario.id === userId
           ? {
               ...usuario,
               metaPersonalizada: Number(nuevaMeta),
-            }
+          }
           : usuario
-      )
-    );
+      );
+
+      if (firebaseConfigurado) {
+        actualizarMetaFirebase(userId, Number(nuevaMeta));
+      }
+
+      return actualizados;
+    });
     setEstadoSync("Meta actualizada por administrador");
   };
 
@@ -256,7 +348,12 @@ export default function App() {
               </div>
             </div>
 
-            <LoginPanel onLogin={handleLogin} mensaje={mensajeLogin} />
+            <LoginPanel
+              onLogin={handleLogin}
+              onGoogleLogin={handleGoogleLogin}
+              mensaje={mensajeLogin}
+              firebaseConfigurado={firebaseConfigurado}
+            />
           </div>
         </div>
       </div>
@@ -314,6 +411,7 @@ export default function App() {
               <span>
                 Persistencia: <span className="text-emerald-300">{estadoSync}</span>
               </span>
+              {cargandoRemoto ? <span>Sincronizando con Firebase...</span> : null}
             </div>
           </div>
 

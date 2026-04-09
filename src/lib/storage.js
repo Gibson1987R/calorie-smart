@@ -2,7 +2,7 @@ import { obtenerFechaLocal } from "./calorias";
 
 const APP_STATE_KEY = "calorie-smart:app-state";
 
-const usuariosDemo = [
+export const usuariosDemo = [
   {
     id: "admin-1",
     nombre: "Administrador",

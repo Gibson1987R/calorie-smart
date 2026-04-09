@@ -1,6 +1,11 @@
 import React, { useState } from "react";
 
-export default function LoginPanel({ onLogin, mensaje }) {
+export default function LoginPanel({
+  onLogin,
+  onGoogleLogin,
+  mensaje,
+  firebaseConfigurado,
+}) {
   const [credenciales, setCredenciales] = useState({
     email: "admin@calorie.app",
     password: "admin123",
@@ -22,6 +27,20 @@ export default function LoginPanel({ onLogin, mensaje }) {
       <p className="mt-2 text-sm text-slate-400">
         Entra como usuario comun o administrador para probar los permisos.
       </p>
+
+      {firebaseConfigurado ? (
+        <button
+          type="button"
+          onClick={onGoogleLogin}
+          className="mt-5 inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-slate-100"
+        >
+          Continuar con Google
+        </button>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-orange-400/20 bg-orange-400/10 px-4 py-3 text-sm text-orange-100">
+          Firebase aun no esta configurado. El acceso actual funciona en modo demo local.
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <label className="block">
