@@ -14,6 +14,13 @@ export const OBJETIVO_AJUSTES = {
 
 const MINIMO_DIARIO = 1200;
 
+export function obtenerFechaLocal(fecha = new Date()) {
+  const year = fecha.getFullYear();
+  const month = String(fecha.getMonth() + 1).padStart(2, "0");
+  const day = String(fecha.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function calcularTMB({ peso, altura, edad, sexo }) {
   const base = 10 * peso + 6.25 * altura - 5 * edad;
   return sexo === "femenino" ? base - 161 : base + 5;
@@ -47,10 +54,14 @@ function sumarDias(fecha, cantidad) {
   return nuevaFecha;
 }
 
-export function construirPlanSemanal(metaDiaria, consumoPorFecha) {
-  const inicioSemana = obtenerInicioDeSemana();
+export function construirPlanSemanal(
+  metaDiaria,
+  consumoPorFecha,
+  fechaBase = new Date()
+) {
+  const inicioSemana = obtenerInicioDeSemana(fechaBase);
   const planBase = Array.from({ length: 7 }, (_, index) => {
-    const fecha = sumarDias(inicioSemana, index).toISOString().slice(0, 10);
+    const fecha = obtenerFechaLocal(sumarDias(inicioSemana, index));
     return {
       fecha,
       metaOriginal: metaDiaria,
@@ -116,6 +127,46 @@ export function redistribuirCalorias(exceso, diasRestantes) {
   return recalculados;
 }
 
+export function obtenerResumenUsuario(usuario, fechaBase = new Date()) {
+  const hoy = obtenerFechaLocal(fechaBase);
+  const ayer = obtenerFechaLocal(sumarDias(fechaBase, -1));
+  const consumoPorFecha = agruparConsumosPorFecha(usuario.consumos || []);
+  const metaActiva = usuario.metaPersonalizada || calcularMetaDiaria(usuario.perfil);
+  const caloriasHoy = consumoPorFecha[hoy] || 0;
+  const caloriasAyer = consumoPorFecha[ayer] || 0;
+
+  if (!caloriasAyer) {
+    return {
+      estado: "sin_registro",
+      prioridad: 0,
+      caloriasHoy,
+      caloriasAyer,
+      metaActiva,
+      mensaje: "No registro alimentacion en el dia anterior",
+    };
+  }
+
+  if (caloriasHoy > metaActiva) {
+    return {
+      estado: "exceso",
+      prioridad: 1,
+      caloriasHoy,
+      caloriasAyer,
+      metaActiva,
+      mensaje: "Supero la meta de consumo del dia",
+    };
+  }
+
+  return {
+    estado: "ok",
+    prioridad: 2,
+    caloriasHoy,
+    caloriasAyer,
+    metaActiva,
+    mensaje: "Seguimiento dentro de rango",
+  };
+}
+
 export function sugerirMenuDiario(caloriasRestantes) {
   const catalogo = [
     { nombre: "Bowl de yogur, avena y frutos rojos", tipo: "Desayuno", calorias: 340 },
@@ -139,4 +190,125 @@ export function sugerirMenuDiario(caloriasRestantes) {
   }
 
   return seleccion.length ? seleccion : catalogo.slice(0, 2);
+}
+
+const CATALOGO_POR_MOMENTO = {
+  desayuno: [
+    {
+      nombre: "Arepa con huevo y aguacate",
+      calorias: 410,
+      descripcion: "Desayuno alto en saciedad y grasas saludables",
+      keywords: ["arepa", "huevo", "aguacate"],
+    },
+    {
+      nombre: "Yogur griego con avena y banano",
+      calorias: 360,
+      descripcion: "Opcion fresca con proteina y fibra",
+      keywords: ["yogur", "avena", "banano"],
+    },
+    {
+      nombre: "Tostadas integrales con queso y pavo",
+      calorias: 390,
+      descripcion: "Ligero y proteico para la manana",
+      keywords: ["tostadas", "queso", "pavo"],
+    },
+  ],
+  almuerzo: [
+    {
+      nombre: "Pollo a la plancha con arroz y ensalada",
+      calorias: 620,
+      descripcion: "Base equilibrada para cumplir meta sin exceso",
+      keywords: ["pollo", "arroz", "ensalada"],
+    },
+    {
+      nombre: "Pasta integral con atun y vegetales",
+      calorias: 680,
+      descripcion: "Almuerzo de energia sostenida",
+      keywords: ["pasta", "atun", "vegetales"],
+    },
+    {
+      nombre: "Carne magra con pure y brocoli",
+      calorias: 710,
+      descripcion: "Mayor densidad calorica controlada",
+      keywords: ["carne", "pure", "brocoli"],
+    },
+  ],
+  cena: [
+    {
+      nombre: "Crema de verduras con pollo desmechado",
+      calorias: 430,
+      descripcion: "Cena ligera con buena proteina",
+      keywords: ["crema", "verduras", "pollo"],
+    },
+    {
+      nombre: "Wrap integral de atun con ensalada",
+      calorias: 470,
+      descripcion: "Practico y ajustado a metas moderadas",
+      keywords: ["wrap", "atun", "ensalada"],
+    },
+    {
+      nombre: "Salmon con vegetales asados",
+      calorias: 520,
+      descripcion: "Cena completa con grasas de calidad",
+      keywords: ["salmon", "vegetales"],
+    },
+  ],
+};
+
+function extraerPreferencias(usuario) {
+  return (usuario.consumos || []).reduce((acc, consumo) => {
+    const tokens = consumo.nombre
+      .toLowerCase()
+      .split(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ]+/)
+      .filter((token) => token.length > 3);
+
+    tokens.forEach((token) => {
+      acc[token] = (acc[token] || 0) + 1;
+    });
+
+    return acc;
+  }, {});
+}
+
+function puntuarSugerencia(sugerencia, preferencias, caloriasObjetivo) {
+  const afinidad = sugerencia.keywords.reduce(
+    (sum, keyword) => sum + (preferencias[keyword] || 0),
+    0
+  );
+  const ajusteCalorico = Math.abs(caloriasObjetivo - sugerencia.calorias);
+
+  return afinidad * 100 - ajusteCalorico;
+}
+
+export function generarMenusInteligentes(usuario, metaDiariaActiva, caloriasRestantes) {
+  if (!usuario) {
+    return {
+      desayuno: [],
+      almuerzo: [],
+      cena: [],
+    };
+  }
+
+  const preferencias = extraerPreferencias(usuario);
+  const distribucion = {
+    desayuno: Math.min(caloriasRestantes, metaDiariaActiva * 0.25),
+    almuerzo: Math.min(caloriasRestantes, metaDiariaActiva * 0.4),
+    cena: Math.min(caloriasRestantes, metaDiariaActiva * 0.35),
+  };
+
+  return Object.entries(CATALOGO_POR_MOMENTO).reduce((acc, [momento, opciones]) => {
+    acc[momento] = [...opciones]
+      .sort(
+        (a, b) =>
+          puntuarSugerencia(b, preferencias, distribucion[momento]) -
+          puntuarSugerencia(a, preferencias, distribucion[momento])
+      )
+      .slice(0, 2)
+      .map((item) => ({
+        ...item,
+        momento,
+      }));
+
+    return acc;
+  }, {});
 }

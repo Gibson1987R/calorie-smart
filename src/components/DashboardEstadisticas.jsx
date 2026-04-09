@@ -11,6 +11,7 @@ const nombresDia = [
 ];
 
 export default function DashboardEstadisticas({
+  nombreUsuario,
   planSemanal,
   consumos,
   metaDiaria,
@@ -20,11 +21,9 @@ export default function DashboardEstadisticas({
       <div className="rounded-[1.75rem] border border-white/10 bg-slate-900 p-6">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-xl font-bold text-white">
-              Dashboard comparativo estilo Excel
-            </h2>
+            <h2 className="text-xl font-bold text-white">Dashboard comparativo</h2>
             <p className="text-sm text-slate-400">
-              Proyectado vs real consumido con meta ajustada y calorias restantes.
+              Datos cargados para <span className="text-white">{nombreUsuario}</span>. Proyectado vs real consumido con meta ajustada.
             </p>
           </div>
           <span className="rounded-full border border-orange-400/20 bg-orange-400/10 px-4 py-1 text-sm text-orange-200">
@@ -77,29 +76,34 @@ export default function DashboardEstadisticas({
       <div className="rounded-[1.75rem] border border-white/10 bg-slate-900 p-6">
         <h2 className="text-xl font-bold text-white">Timeline de consumos</h2>
         <p className="mt-2 text-sm text-slate-400">
-          Vista operativa para revisar las eventualidades que disparan la
-          redistribucion automatica.
+          Se actualiza al seleccionar el nombre del usuario en la lista superior.
         </p>
 
         <div className="mt-6 space-y-3">
-          {consumos.map((consumo) => (
-            <div
-              key={consumo.id}
-              className="rounded-2xl border border-white/10 bg-slate-800/70 p-4"
-            >
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-medium text-white">{consumo.nombre}</p>
-                  <p className="text-sm text-slate-400">
-                    {consumo.fecha} | {consumo.momento}
-                  </p>
+          {consumos.length ? (
+            consumos.map((consumo) => (
+              <div
+                key={consumo.id}
+                className="rounded-2xl border border-white/10 bg-slate-800/70 p-4"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-medium text-white">{consumo.nombre}</p>
+                    <p className="text-sm text-slate-400">
+                      {consumo.fecha} | {consumo.momento}
+                    </p>
+                  </div>
+                  <span className="text-sm font-semibold text-orange-300">
+                    {consumo.calorias} kcal
+                  </span>
                 </div>
-                <span className="text-sm font-semibold text-orange-300">
-                  {consumo.calorias} kcal
-                </span>
               </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-slate-800/40 p-5 text-sm text-slate-400">
+              Este usuario aun no tiene consumos registrados.
             </div>
-          ))}
+          )}
         </div>
       </div>
     </section>

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import FormularioComida from "./components/FormularioComida.jsx";
 import DashboardEstadisticas from "./components/DashboardEstadisticas.jsx";
+import LoginPanel from "./components/LoginPanel.jsx";
+import ListaUsuarios from "./components/ListaUsuarios.jsx";
 import {
   ACTIVIDAD_FACTORES,
   OBJETIVO_AJUSTES,
@@ -8,108 +10,114 @@ import {
   construirPlanSemanal,
   calcularMetaDiaria,
   calcularTMB,
-  sugerirMenuDiario,
+  generarMenusInteligentes,
+  obtenerFechaLocal,
+  obtenerResumenUsuario,
 } from "./lib/calorias";
 import {
-  cargarDatosIniciales,
-  persistirConsumo,
-  persistirPerfilYMeta,
+  autenticarUsuario,
+  cargarEstadoAplicacion,
+  persistirAppState,
 } from "./lib/storage";
 
-const perfilInicial = {
-  peso: 70,
-  altura: 170,
-  edad: 30,
-  sexo: "masculino",
-  actividad: "moderado",
-  objetivo: "mantener",
-};
-
-const consumosDemo = [
-  {
-    id: 1,
-    fecha: "2026-04-06",
-    momento: "almuerzo",
-    nombre: "2 platanos fritos y 5 huevos",
-    calorias: 890,
-  },
-  {
-    id: 2,
-    fecha: "2026-04-06",
-    momento: "cena",
-    nombre: "2 tequenos",
-    calorias: 280,
-  },
-  {
-    id: 3,
-    fecha: "2026-04-07",
-    momento: "desayuno",
-    nombre: "Avena con yogur griego",
-    calorias: 420,
-  },
-];
-
 export default function App() {
-  const datosIniciales = useMemo(
-    () => cargarDatosIniciales(perfilInicial, consumosDemo),
-    []
+  const estadoInicial = useMemo(() => cargarEstadoAplicacion(), []);
+  const [usuarios, setUsuarios] = useState(estadoInicial.usuarios);
+  const [sesion, setSesion] = useState(estadoInicial.sesion);
+  const [usuarioSeleccionadoId, setUsuarioSeleccionadoId] = useState(
+    estadoInicial.usuarioSeleccionadoId
   );
-  const [perfil, setPerfil] = useState(datosIniciales.perfil);
-  const [consumos, setConsumos] = useState(datosIniciales.consumos);
-  const [resumenMenu, setResumenMenu] = useState([]);
   const [estadoSync, setEstadoSync] = useState("Listo");
+  const [mensajeLogin, setMensajeLogin] = useState("");
+  const [prefillComida, setPrefillComida] = useState(null);
 
-  const tmb = useMemo(() => calcularTMB(perfil), [perfil]);
-  const metaDiaria = useMemo(() => calcularMetaDiaria(perfil), [perfil]);
-  const consumoPorFecha = useMemo(
-    () => agruparConsumosPorFecha(consumos),
-    [consumos]
+  useEffect(() => {
+    persistirAppState({
+      usuarios,
+      sesion,
+      usuarioSeleccionadoId,
+      onStatusChange: setEstadoSync,
+    });
+  }, [usuarios, sesion, usuarioSeleccionadoId]);
+
+  const usuarioSesion = useMemo(
+    () => usuarios.find((usuario) => usuario.id === sesion?.userId) || null,
+    [usuarios, sesion]
   );
+
+  const esAdmin = usuarioSesion?.rol === "admin";
+
+  const usuariosOperativos = useMemo(
+    () => usuarios.filter((usuario) => usuario.rol === "usuario"),
+    [usuarios]
+  );
+
+  useEffect(() => {
+    if (!sesion) return;
+
+    if (esAdmin) {
+      if (
+        !usuarioSeleccionadoId ||
+        !usuariosOperativos.some((usuario) => usuario.id === usuarioSeleccionadoId)
+      ) {
+        setUsuarioSeleccionadoId(usuariosOperativos[0]?.id || null);
+      }
+      return;
+    }
+
+    setUsuarioSeleccionadoId(usuarioSesion?.id || null);
+  }, [esAdmin, sesion, usuarioSeleccionadoId, usuarioSesion, usuariosOperativos]);
+
+  const usuarioActivo = useMemo(() => {
+    if (!sesion) return null;
+    if (esAdmin) {
+      return (
+        usuariosOperativos.find((usuario) => usuario.id === usuarioSeleccionadoId) ||
+        usuariosOperativos[0] ||
+        null
+      );
+    }
+
+    return usuarioSesion;
+  }, [esAdmin, sesion, usuarioSeleccionadoId, usuarioSesion, usuariosOperativos]);
+
+  const consumoPorFecha = useMemo(
+    () => agruparConsumosPorFecha(usuarioActivo?.consumos || []),
+    [usuarioActivo]
+  );
+
+  const tmb = useMemo(
+    () => (usuarioActivo ? calcularTMB(usuarioActivo.perfil) : 0),
+    [usuarioActivo]
+  );
+
+  const metaCalculada = useMemo(
+    () => (usuarioActivo ? calcularMetaDiaria(usuarioActivo.perfil) : 0),
+    [usuarioActivo]
+  );
+
+  const metaDiariaActiva = usuarioActivo?.metaPersonalizada || metaCalculada;
 
   const planSemanal = useMemo(
-    () => construirPlanSemanal(metaDiaria, consumoPorFecha),
-    [metaDiaria, consumoPorFecha]
+    () => construirPlanSemanal(metaDiariaActiva || 0, consumoPorFecha),
+    [metaDiariaActiva, consumoPorFecha]
   );
 
   const caloriasDisponiblesHoy = useMemo(() => {
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = obtenerFechaLocal();
     const diaActual = planSemanal.find((dia) => dia.fecha === hoy);
-    return diaActual ? Math.max(diaActual.restante, 0) : metaDiaria;
-  }, [metaDiaria, planSemanal]);
+    return diaActual ? Math.max(diaActual.restante, 0) : metaDiariaActiva;
+  }, [metaDiariaActiva, planSemanal]);
 
-  useEffect(() => {
-    setResumenMenu(sugerirMenuDiario(caloriasDisponiblesHoy));
-  }, [caloriasDisponiblesHoy]);
-
-  useEffect(() => {
-    persistirPerfilYMeta({
-      perfil,
-      tmb,
-      metaDiaria,
-      onStatusChange: setEstadoSync,
-    });
-  }, [perfil, tmb, metaDiaria]);
-
-  const handlePerfilChange = (event) => {
-    const { name, value } = event.target;
-    setPerfil((prev) => ({
-      ...prev,
-      [name]: ["peso", "altura", "edad"].includes(name)
-        ? Number(value)
-        : value,
-    }));
-  };
-
-  const handleAgregarComida = (nuevaComida) => {
-    const consumoNormalizado = {
-      id: Date.now(),
-      ...nuevaComida,
-      calorias: Number(nuevaComida.calorias),
-    };
-
-    setConsumos((prev) => [consumoNormalizado, ...prev]);
-    persistirConsumo(consumoNormalizado, setEstadoSync);
-  };
+  const menusSugeridos = useMemo(
+    () =>
+      generarMenusInteligentes(
+        usuarioActivo,
+        metaDiariaActiva || 0,
+        caloriasDisponiblesHoy || 0
+      ),
+    [caloriasDisponiblesHoy, metaDiariaActiva, usuarioActivo]
+  );
 
   const resumenSemanal = useMemo(() => {
     const consumido = planSemanal.reduce((sum, dia) => sum + dia.consumido, 0);
@@ -127,80 +135,242 @@ export default function App() {
     };
   }, [planSemanal]);
 
+  const usuariosPriorizados = useMemo(
+    () =>
+      usuariosOperativos
+        .map((usuario) => ({
+          ...usuario,
+          resumen: obtenerResumenUsuario(usuario),
+        }))
+        .sort((a, b) => a.resumen.prioridad - b.resumen.prioridad),
+    [usuariosOperativos]
+  );
+
+  const handleLogin = (credenciales) => {
+    const resultado = autenticarUsuario(usuarios, credenciales);
+
+    if (!resultado.ok) {
+      setMensajeLogin(resultado.message);
+      return;
+    }
+
+    setSesion({
+      userId: resultado.user.id,
+      rol: resultado.user.rol,
+    });
+    setUsuarioSeleccionadoId(
+      resultado.user.rol === "admin"
+        ? usuariosOperativos[0]?.id || null
+        : resultado.user.id
+    );
+    setMensajeLogin("");
+  };
+
+  const handleLogout = () => {
+    setSesion(null);
+    setMensajeLogin("");
+  };
+
+  const handlePerfilChange = (event) => {
+    const { name, value } = event.target;
+
+    setUsuarios((prev) =>
+      prev.map((usuario) => {
+        if (usuario.id !== usuarioActivo.id) return usuario;
+
+        return {
+          ...usuario,
+          perfil: {
+            ...usuario.perfil,
+            [name]: ["peso", "altura", "edad"].includes(name)
+              ? Number(value)
+              : value,
+          },
+        };
+      })
+    );
+  };
+
+  const handleAgregarComida = (nuevaComida) => {
+    if (!usuarioActivo) return;
+
+    const consumoNormalizado = {
+      id: Date.now(),
+      ...nuevaComida,
+      calorias: Number(nuevaComida.calorias),
+    };
+
+    setUsuarios((prev) =>
+      prev.map((usuario) =>
+        usuario.id === usuarioActivo.id
+          ? {
+              ...usuario,
+              consumos: [consumoNormalizado, ...usuario.consumos],
+            }
+          : usuario
+      )
+    );
+    setEstadoSync("Consumo registrado");
+    setPrefillComida(null);
+  };
+
+  const handleAjustarMeta = (userId, nuevaMeta) => {
+    setUsuarios((prev) =>
+      prev.map((usuario) =>
+        usuario.id === userId
+          ? {
+              ...usuario,
+              metaPersonalizada: Number(nuevaMeta),
+            }
+          : usuario
+      )
+    );
+    setEstadoSync("Meta actualizada por administrador");
+  };
+
+  const nombreCompleto = usuarioActivo
+    ? `${usuarioActivo.nombre} ${usuarioActivo.apellidos || ""}`.trim()
+    : "";
+
+  if (!sesion) {
+    return (
+      <div className="min-h-screen bg-slate-950 px-4 py-10 text-slate-50">
+        <div className="mx-auto max-w-6xl">
+          <div className="grid gap-8 rounded-[2rem] border border-white/10 bg-gradient-to-br from-cyan-500/15 via-slate-950 to-orange-500/10 p-8 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="space-y-6">
+              <span className="inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-1 text-sm font-medium text-cyan-200">
+                Control calorico con operacion administrativa
+              </span>
+              <h1 className="max-w-3xl text-4xl font-black tracking-tight md:text-6xl">
+                Una misma landing para pacientes, administrador y seguimiento de metas.
+              </h1>
+              <p className="max-w-2xl text-lg leading-8 text-slate-300">
+                Inicia sesion como usuario comun o administrador para probar la
+                carga de consumos, la lista priorizada y los ajustes de meta
+                recomendados por administracion.
+              </p>
+              <div className="grid gap-4 md:grid-cols-3">
+                <MetricCard label="Admin demo" value="admin@calorie.app" detail="Clave: admin123" />
+                <MetricCard label="Usuario demo" value="laura@calorie.app" detail="Clave: user123" />
+                <MetricCard label="Persistencia" value="Local lista" detail={estadoSync} />
+              </div>
+            </div>
+
+            <LoginPanel onLogin={handleLogin} mensaje={mensajeLogin} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
       <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-8 sm:px-6 lg:px-8">
-        <section className="grid gap-8 rounded-[2rem] border border-white/10 bg-gradient-to-br from-emerald-500/15 via-slate-900 to-orange-400/10 p-8 shadow-2xl shadow-emerald-950/30 lg:grid-cols-[1.2fr_0.8fr]">
+        <section className="grid gap-8 rounded-[2rem] border border-white/10 bg-gradient-to-br from-emerald-500/15 via-slate-900 to-orange-400/10 p-8 shadow-2xl shadow-emerald-950/30 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
-            <span className="inline-flex rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-1 text-sm font-medium text-emerald-200">
-              Landing de registro y optimizacion calorica
-            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex rounded-full border border-emerald-400/30 bg-emerald-400/10 px-4 py-1 text-sm font-medium text-emerald-200">
+                Sesion: {usuarioSesion?.rol}
+              </span>
+              <span className="inline-flex rounded-full border border-white/10 bg-white/5 px-4 py-1 text-sm text-slate-200">
+                {usuarioSesion?.nombre}
+              </span>
+            </div>
             <div className="space-y-4">
               <h1 className="max-w-3xl text-4xl font-black tracking-tight text-white md:text-6xl">
-                Controla tu semana calorica con reajustes automaticos y sugerencias inteligentes.
+                {esAdmin
+                  ? "Monitorea pacientes, detecta alertas y corrige metas en tiempo real."
+                  : "Registra tu alimentacion y sigue tu meta diaria con ajuste semanal."}
               </h1>
               <p className="max-w-2xl text-base leading-7 text-slate-300 md:text-lg">
-                Esta interfaz combina perfil metabolico, registro de comidas,
-                presupuesto semanal y una vista operativa estilo Excel para
-                reaccionar a excesos sin perder el objetivo.
+                {esAdmin
+                  ? "La lista prioriza usuarios sin registro ayer y luego quienes superaron su meta hoy. Al seleccionar un nombre, el dashboard inferior carga sus datos."
+                  : "Tu panel muestra tu perfil, presupuesto semanal y los consumos registrados para que sigas tu progreso."}
               </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
+              <MetricCard label="TMB" value={`${Math.round(tmb)} kcal`} detail="Mifflin-St Jeor" />
               <MetricCard
-                label="TMB"
-                value={`${Math.round(tmb)} kcal`}
-                detail="Mifflin-St Jeor"
-              />
-              <MetricCard
-                label="Meta diaria"
-                value={`${Math.round(metaDiaria)} kcal`}
-                detail={`${perfil.objetivo} | ${OBJETIVO_AJUSTES[perfil.objetivo]} kcal`}
+                label="Meta activa"
+                value={`${Math.round(metaDiariaActiva || 0)} kcal`}
+                detail={
+                  usuarioActivo?.metaPersonalizada
+                    ? "Meta recomendada por admin"
+                    : `${usuarioActivo?.perfil?.objetivo || "mantener"} | ${OBJETIVO_AJUSTES[usuarioActivo?.perfil?.objetivo || "mantener"]} kcal`
+                }
               />
               <MetricCard
                 label="Actividad"
-                value={perfil.actividad}
-                detail={`Factor ${ACTIVIDAD_FACTORES[perfil.actividad]}`}
+                value={usuarioActivo?.perfil?.actividad || "-"}
+                detail={`Factor ${ACTIVIDAD_FACTORES[usuarioActivo?.perfil?.actividad] || "-"}`}
               />
             </div>
-            <p className="text-sm text-slate-400">
-              Persistencia: <span className="text-emerald-300">{estadoSync}</span>
-            </p>
+
+            <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
+              <span>
+                Usuario activo: <span className="text-white">{nombreCompleto}</span>
+              </span>
+              <span>
+                Persistencia: <span className="text-emerald-300">{estadoSync}</span>
+              </span>
+            </div>
           </div>
 
-          <div className="rounded-[1.75rem] border border-white/10 bg-slate-900/70 p-6 backdrop-blur">
-            <h2 className="text-xl font-bold text-white">Perfil del usuario</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              Ajusta peso, altura, edad, sexo, actividad y objetivo para
-              recalcular automaticamente el presupuesto semanal.
-            </p>
+          <div className="space-y-6 rounded-[1.75rem] border border-white/10 bg-slate-900/70 p-6 backdrop-blur">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-4">
+                <img
+                  src={usuarioActivo?.foto}
+                  alt={nombreCompleto}
+                  className="h-20 w-20 rounded-3xl border border-white/10 bg-slate-800 object-cover"
+                />
+                <div>
+                  <h2 className="text-xl font-bold text-white">{nombreCompleto}</h2>
+                  <p className="mt-1 text-sm text-slate-300">{usuarioActivo?.email}</p>
+                  <p className="text-sm text-slate-400">{usuarioActivo?.telefono}</p>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {esAdmin
+                      ? "Perfil del paciente seleccionado desde la lista administrativa."
+                      : "Tu ficha personal y configuracion metabolica."}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-2xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/20 hover:bg-white/5"
+              >
+                Cerrar sesion
+              </button>
+            </div>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2">
               <CampoPerfil
                 label="Peso (kg)"
                 name="peso"
                 type="number"
-                value={perfil.peso}
+                value={usuarioActivo?.perfil?.peso || ""}
                 onChange={handlePerfilChange}
               />
               <CampoPerfil
                 label="Altura (cm)"
                 name="altura"
                 type="number"
-                value={perfil.altura}
+                value={usuarioActivo?.perfil?.altura || ""}
                 onChange={handlePerfilChange}
               />
               <CampoPerfil
                 label="Edad"
                 name="edad"
                 type="number"
-                value={perfil.edad}
+                value={usuarioActivo?.perfil?.edad || ""}
                 onChange={handlePerfilChange}
               />
               <SelectPerfil
                 label="Sexo"
                 name="sexo"
-                value={perfil.sexo}
+                value={usuarioActivo?.perfil?.sexo || "masculino"}
                 onChange={handlePerfilChange}
                 options={[
                   { label: "Masculino", value: "masculino" },
@@ -210,7 +380,7 @@ export default function App() {
               <SelectPerfil
                 label="Actividad"
                 name="actividad"
-                value={perfil.actividad}
+                value={usuarioActivo?.perfil?.actividad || "moderado"}
                 onChange={handlePerfilChange}
                 options={[
                   { label: "Sedentario", value: "sedentario" },
@@ -223,7 +393,7 @@ export default function App() {
               <SelectPerfil
                 label="Objetivo"
                 name="objetivo"
-                value={perfil.objetivo}
+                value={usuarioActivo?.perfil?.objetivo || "mantener"}
                 onChange={handlePerfilChange}
                 options={[
                   { label: "Perder", value: "perder" },
@@ -235,58 +405,83 @@ export default function App() {
           </div>
         </section>
 
-        <section className="mt-8 grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
-          <FormularioComida onAgregarComida={handleAgregarComida} />
+        <section className="mt-8 grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+          {esAdmin ? (
+            <ListaUsuarios
+              usuarios={usuariosPriorizados}
+              usuarioSeleccionadoId={usuarioActivo?.id}
+              onSeleccionarUsuario={setUsuarioSeleccionadoId}
+              onAjustarMeta={handleAjustarMeta}
+            />
+          ) : (
+            <FormularioComida
+              onAgregarComida={handleAgregarComida}
+              usuarioActivo={usuarioActivo}
+              puedeRegistrar
+              prefillComida={prefillComida}
+              onConsumirPrefill={() => setPrefillComida(null)}
+            />
+          )}
 
           <aside className="space-y-6">
+            {esAdmin ? (
+              <FormularioComida
+                onAgregarComida={handleAgregarComida}
+                usuarioActivo={usuarioActivo}
+                puedeRegistrar={Boolean(usuarioActivo)}
+                prefillComida={prefillComida}
+                onConsumirPrefill={() => setPrefillComida(null)}
+              />
+            ) : null}
+
             <div className="rounded-[1.75rem] border border-white/10 bg-slate-900 p-6">
               <h2 className="text-xl font-bold text-white">Resumen semanal</h2>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <MetricCard
-                  label="Proyectado"
-                  value={`${Math.round(resumenSemanal.proyectado)} kcal`}
-                  detail="Antes de redistribuir"
-                />
-                <MetricCard
-                  label="Ajustado"
-                  value={`${Math.round(resumenSemanal.ajustado)} kcal`}
-                  detail="Meta tras eventualidades"
-                />
-                <MetricCard
-                  label="Consumido"
-                  value={`${Math.round(resumenSemanal.consumido)} kcal`}
-                  detail="Suma real registrada"
-                />
+                <MetricCard label="Proyectado" value={`${Math.round(resumenSemanal.proyectado)} kcal`} detail="Antes de redistribuir" />
+                <MetricCard label="Ajustado" value={`${Math.round(resumenSemanal.ajustado)} kcal`} detail="Meta tras eventualidades" />
+                <MetricCard label="Consumido" value={`${Math.round(resumenSemanal.consumido)} kcal`} detail="Suma real registrada" />
                 <MetricCard
                   label="Balance"
                   value={`${Math.round(resumenSemanal.balance)} kcal`}
-                  detail={
-                    resumenSemanal.balance >= 0 ? "Margen disponible" : "Exceso semanal"
-                  }
+                  detail={resumenSemanal.balance >= 0 ? "Margen disponible" : "Exceso semanal"}
                 />
               </div>
             </div>
 
             <div className="rounded-[1.75rem] border border-white/10 bg-slate-900 p-6">
-              <h2 className="text-xl font-bold text-white">
-                Menu sugerido para hoy
-              </h2>
+              <h2 className="text-xl font-bold text-white">Menus sugeridos del paciente</h2>
               <p className="mt-2 text-sm text-slate-400">
-                Ajustado a {Math.round(caloriasDisponiblesHoy)} kcal restantes.
+                Ajustados al historial de comidas, gustos previos y objetivo calorico recomendado de {nombreCompleto}.
               </p>
-              <div className="mt-4 space-y-3">
-                {resumenMenu.map((item) => (
-                  <div
-                    key={item.nombre}
-                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-800/70 px-4 py-3"
-                  >
-                    <div>
-                      <p className="font-medium text-white">{item.nombre}</p>
-                      <p className="text-sm text-slate-400">{item.tipo}</p>
-                    </div>
-                    <span className="text-sm font-semibold text-emerald-300">
-                      {item.calorias} kcal
-                    </span>
+              <div className="mt-4 space-y-5">
+                {Object.entries(menusSugeridos).map(([momento, opciones]) => (
+                  <div key={momento} className="space-y-3">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      {momento}s sugeridos
+                    </h3>
+                    {opciones.map((item) => (
+                      <button
+                        key={`${usuarioActivo?.id}-${momento}-${item.nombre}`}
+                        type="button"
+                        onClick={() =>
+                          setPrefillComida({
+                            fecha: obtenerFechaLocal(),
+                            momento: item.momento,
+                            nombre: item.nombre,
+                            calorias: String(item.calorias),
+                          })
+                        }
+                        className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-slate-800/70 px-4 py-3 text-left transition hover:border-cyan-400/50 hover:bg-slate-800"
+                      >
+                        <div>
+                          <p className="font-medium text-white">{item.nombre}</p>
+                          <p className="text-sm text-slate-400">{item.descripcion}</p>
+                        </div>
+                        <span className="text-sm font-semibold text-emerald-300">
+                          {item.calorias} kcal
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -295,9 +490,10 @@ export default function App() {
         </section>
 
         <DashboardEstadisticas
+          nombreUsuario={nombreCompleto}
           planSemanal={planSemanal}
-          consumos={consumos}
-          metaDiaria={metaDiaria}
+          consumos={usuarioActivo?.consumos || []}
+          metaDiaria={metaDiariaActiva || 0}
         />
       </div>
     </div>
