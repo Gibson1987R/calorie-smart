@@ -203,7 +203,7 @@ const CATALOGO_POR_MOMENTO = {
     {
       nombre: "Yogur griego con avena y banano",
       calorias: 360,
-      descripcion: "Opcion fresca con proteina y fibra",
+      descripcion: "Opcion fresca con proteína y fibra",
       keywords: ["yogur", "avena", "banano"],
     },
     {
@@ -229,7 +229,7 @@ const CATALOGO_POR_MOMENTO = {
     {
       nombre: "Carne magra con pure y brocoli",
       calorias: 710,
-      descripcion: "Mayor densidad calorica controlada",
+      descripcion: "Mayor densidad calórica controlada",
       keywords: ["carne", "pure", "brocoli"],
     },
   ],
@@ -237,7 +237,7 @@ const CATALOGO_POR_MOMENTO = {
     {
       nombre: "Crema de verduras con pollo desmechado",
       calorias: 430,
-      descripcion: "Cena ligera con buena proteina",
+      descripcion: "Cena ligera con buena proteína",
       keywords: ["crema", "verduras", "pollo"],
     },
     {

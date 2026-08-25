@@ -25,7 +25,7 @@ export default function LoginPanel({
     <section className="rounded-[1.75rem] border border-white/10 bg-slate-900/80 p-6">
       <h2 className="text-2xl font-bold text-white">Login</h2>
       <p className="mt-2 text-sm text-slate-400">
-        Entra como usuario comun o administrador para probar los permisos.
+        Entra como usuario común o administrador para probar los permisos.
       </p>
 
       {firebaseConfigurado ? (
@@ -38,7 +38,7 @@ export default function LoginPanel({
         </button>
       ) : (
         <div className="mt-5 rounded-2xl border border-orange-400/20 bg-orange-400/10 px-4 py-3 text-sm text-orange-100">
-          Firebase aun no esta configurado. El acceso actual funciona en modo demo local.
+          Modo demo: no hay backend configurado, así que tus datos se guardan solo en este navegador.
         </div>
       )}
 
@@ -75,7 +75,7 @@ export default function LoginPanel({
           type="submit"
           className="inline-flex w-full items-center justify-center rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-300"
         >
-          Iniciar sesion
+          Iniciar sesión
         </button>
       </form>
     </section>

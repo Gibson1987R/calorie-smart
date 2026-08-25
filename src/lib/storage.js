@@ -160,7 +160,7 @@ export function cargarEstadoAplicacion() {
     if (!raw) {
       return {
         usuarios: usuariosDemo,
-        sesion: null,
+        sesión: null,
         usuarioSeleccionadoId: "user-1",
       };
     }
@@ -168,13 +168,13 @@ export function cargarEstadoAplicacion() {
     const data = JSON.parse(raw);
     return {
       usuarios: hidratarUsuarios(data.usuarios || usuariosDemo),
-      sesion: data.sesion || null,
+      sesión: data.sesión || null,
       usuarioSeleccionadoId: data.usuarioSeleccionadoId || "user-1",
     };
   } catch {
     return {
       usuarios: usuariosDemo,
-      sesion: null,
+      sesión: null,
       usuarioSeleccionadoId: "user-1",
     };
   }
@@ -182,13 +182,13 @@ export function cargarEstadoAplicacion() {
 
 export function persistirAppState({
   usuarios,
-  sesion,
+  sesión,
   usuarioSeleccionadoId,
   onStatusChange,
 }) {
   const storage = obtenerStorage();
   if (!storage) {
-    onStatusChange?.("Sesion activa sin persistencia local");
+    onStatusChange?.("Sesión activa sin persistencia local");
     return;
   }
 
@@ -196,7 +196,7 @@ export function persistirAppState({
     APP_STATE_KEY,
     JSON.stringify({
       usuarios,
-      sesion,
+      sesión,
       usuarioSeleccionadoId,
     })
   );
