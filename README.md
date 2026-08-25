@@ -4,7 +4,35 @@ Contador de calorías con metas personalizadas. Calcula tu gasto energético a
 partir de tu perfil, te propone una meta diaria y registra lo que comes para
 ver si la estás cumpliendo.
 
+### ▶ Pruébalo: **<https://gibson1987r.github.io/calorie-smart/>**
+
+Entra con **`admin@calorie.app` / `admin123`** (administrador) o
+**`laura@calorie.app` / `user123`** (usuario). No hay que registrarse: sin
+backend configurado la app corre completa contra el `localStorage` de tu
+navegador.
+
+[![Pantalla de entrada de Calorie Smart](docs/captura.png)](https://gibson1987r.github.io/calorie-smart/)
+
 **Stack:** React 18 · Vite · Tailwind CSS · Firebase Auth · Supabase (PostgreSQL)
+
+---
+
+## La decisión que vale la pena contar: que funcione sin backend
+
+La app usa Firebase Auth y Supabase, pero **ninguno de los dos es obligatorio**.
+Cada cliente comprueba primero si tiene configuración
+(`firebaseConfigurado`, en `src/lib/firebase.js`) y, si no la tiene, la app cae
+a una capa de persistencia contra `localStorage` con los mismos métodos.
+
+No lo hice por elegancia: lo hice porque **una demo que exige credenciales no es
+una demo**. Quien abre el enlace desde mi perfil tiene diez segundos de
+paciencia, no diez minutos para crear un proyecto de Firebase. Con esto, el
+mismo código sirve para enseñarlo y para desplegarlo de verdad: se le ponen
+las variables de entorno y usa el backend real, sin tocar una línea.
+
+**Lo que costó:** cada operación de datos tiene que existir dos veces, una por
+capa, y las dos tienen que mantenerse en paralelo. Es deuda real. La acepté
+porque el modo demo es lo que hace que el proyecto se pueda enseñar.
 
 ---
 
